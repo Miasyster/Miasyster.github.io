@@ -1,0 +1,3 @@
+User-agent: *
+Disallow:
+Sitemap: https://miasyster.github.io/sitemap.xml

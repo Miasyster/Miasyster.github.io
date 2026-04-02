@@ -1,0 +1,47 @@
+baseURL = "https://miasyster.github.io/"
+title = "Miasyster's Engineering Blog"
+theme = "PaperMod"
+defaultContentLanguage = "zh"
+enableRobotsTXT = true
+
+[languages]
+  [languages.zh]
+    languageName = "中文"
+    weight = 1
+    title = "AI + 量化工程"
+    [languages.zh.params]
+      description = "AI Agent 架构 / 量化研究系统 / 工程实践"
+  [languages.en]
+    languageName = "English"
+    weight = 2
+    title = "AI + Quant Engineering"
+    [languages.en.params]
+      description = "AI Agent Architecture / Quant Research Systems / Engineering Practice"
+
+[params]
+  env = "production"
+  defaultTheme = "auto"
+  ShowReadingTime = true
+  ShowShareButtons = true
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = true
+  ShowCodeCopyButtons = true
+  ShowToc = true
+  TocOpen = false
+  [params.homeInfoParams]
+    Title = "AI + Quant Engineering"
+    Content = "Building production-grade AI-orchestrated quantitative research systems. Writing about architecture decisions, engineering trade-offs, and lessons learned."
+  [[params.socialIcons]]
+    name = "github"
+    url = "https://github.com/Miasyster"
+
+[markup]
+  [markup.highlight]
+    style = "monokai"
+    lineNos = false
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[outputs]
+  home = ["HTML", "RSS", "JSON"]

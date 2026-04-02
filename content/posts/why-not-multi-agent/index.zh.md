@@ -1,6 +1,6 @@
 ---
 title: "为什么我没有用多智能体架构做量化研究系统"
-date: 2026-04-03
+date: 2026-04-02
 draft: false
 tags: ["AI Agent", "Multi-Agent", "Quant", "Architecture"]
 categories: ["Architecture Decisions"]

@@ -1,6 +1,6 @@
 ---
 title: "Why I Didn't Use Multi-Agent Architecture for My Quant Research System"
-date: 2026-04-03
+date: 2026-04-02
 draft: false
 tags: ["AI Agent", "Multi-Agent", "Quant", "Architecture"]
 categories: ["Architecture Decisions"]

@@ -28,6 +28,9 @@ enableRobotsTXT = true
   ShowCodeCopyButtons = true
   ShowToc = true
   TocOpen = false
+  # Analytics — fill in after registering
+  # umamiWebsiteId = "your-umami-website-id"
+  # googleSiteVerification = "your-google-verification-code"
   [params.homeInfoParams]
     Title = "AI + Quant Engineering"
     Content = "Building production-grade AI-orchestrated quantitative research systems. Writing about architecture decisions, engineering trade-offs, and lessons learned."

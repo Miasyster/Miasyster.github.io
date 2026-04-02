@@ -2,126 +2,98 @@
 title: "Why I Didn't Use Multi-Agent Architecture for My Quant Research System"
 date: 2026-04-02
 draft: false
-tags: ["AI Agent", "Multi-Agent", "Quant", "Architecture"]
+tags: ["AI Agent", "Multi-Agent", "Architecture", "State Machine"]
 categories: ["Architecture Decisions"]
-summary: "Multi-agent is the hot paradigm in AI engineering. But when building an AI-driven quantitative research system, I chose single agent + state machine. Here's why."
+summary: "Multi-agent is the hot paradigm in AI engineering. I chose single agent + state machine for my AI-driven quant research system. Not because multi-agent is too hard, but because the problem structure doesn't match."
 ---
 
-## Context
+## A Counterintuitive Choice
 
-I built a quantitative research system from scratch, covering the full pipeline from data ingestion to paper trading:
+Since 2024, multi-agent has become almost the default architecture for AI systems. CrewAI, AutoGen, MetaGPT — every framework tells you: split tasks across multiple agents, let them collaborate, get better results.
 
-```
-Data → Factor Research → Anti-Overfit Testing → ML Training → Leakage Detection → Backtest → Signal Generation → Paper Trading
-```
+When designing an AI-driven quantitative research system, I seriously evaluated this path and ultimately rejected it. I chose what looks like a "dated" approach: single agent + finite state machine.
 
-The system has three layers: Research Kernel (execution engine), AI Orchestration (coordination), and Human Interface (visualization). The AI's job is to drive automated research iterations — generate factor expressions, submit backtests, evaluate metrics, decide whether to keep optimizing.
+This wasn't a resource constraint or technical limitation. It was a deliberate choice after analyzing the problem structure.
 
-When I added the AI orchestration layer, the first architecture question was: multi-agent or single agent?
+## The Structure, Not the Surface
 
-## The Multi-Agent Temptation
+A quant research workflow has many apparent "roles": someone generates strategies, someone runs backtests, someone evaluates results, someone checks risk. It's natural to map each role to an agent.
 
-Multi-agent is the hot paradigm in AI engineering right now. Intuitively, quant research seems like a good fit:
+But this is reasoning by analogy from org charts to system architecture — a surface-level inference.
 
-- **Research Agent**: generates factor expressions and strategy code
-- **Backtest Agent**: submits backtests, collects results
-- **Evaluation Agent**: analyzes metrics, checks for overfitting
-- **Risk Agent**: validates constraints
+The real questions to analyze are structural:
 
-Sounds reasonable — clear separation of concerns.
+**Are tasks parallel or sequential?**
 
-## Why I Didn't Do It
+The core quant research pipeline is strictly sequential: train model → backtest (needs model output) → evaluate (needs backtest results) → decide (needs evaluation). Each step's input is the previous step's output. Zero parallelism. The coordination benefit of multi-agent is zero in a serial pipeline.
 
-I chose single agent + state machine orchestration. Not because "multi-agent is too hard to implement," but because the preconditions for multi-agent don't hold in my scenario.
+**Do different agents need different toolsets?**
 
-### Precondition 1: Different tasks need different toolsets
+A core assumption of multi-agent is that each agent has exclusive tools with minimal overlap. In quant research, "generate strategy," "submit backtest," "query metrics," and "check constraints" all point to the same execution engine API. Four agents, one hammer. Splitting them adds communication overhead without adding capability.
 
-A core premise of multi-agent is that each agent has its own exclusive tools with minimal overlap.
+**Does evaluation require subjective debate?**
 
-In quant research, every operation points to the same Kernel API:
+Some systems use multi-agent for red team / blue team — one proposes, one attacks. This works for subjective tasks like writing or product design. But quant evaluation is numerically deterministic: a Sharpe Ratio of 1.2 is 1.2. An IC of 0.03 is 0.03. No agent needs to "debate" whether the number is trustworthy. Anti-overfit testing is a deterministic checklist, not a judgment call. The adversarial mechanism degenerates into if-else logic.
 
-```
-Research Agent → calls Kernel API to submit factor research
-Backtest Agent → calls Kernel API to submit backtest
-Eval Agent    → calls Kernel API to query metrics
-Risk Agent    → calls Kernel API to check constraints
-```
+All three conditions unmet. Multi-agent adds complexity here without adding value.
 
-Four agents, one hammer. Splitting them doesn't add capability, only coordination overhead.
+## The Approaches I Considered
 
-### Precondition 2: Tasks can run in parallel
+### Approach A: Multi-Agent Collaboration
 
-The second premise is that agents can work concurrently, achieving 1+1>2 through coordination.
+A CrewAI-style setup — define researcher, backtester, evaluator, risk officer as four roles, coordinate through message passing.
 
-Quant research is **strictly sequential**:
+Where it's correct: naturally parallel tasks (searching multiple sources simultaneously), non-shareable toolsets (codebase vs. production environment permission isolation), multi-perspective debate needed (product design).
+
+Why it doesn't fit my case: serial pipeline means zero parallelism gain; shared toolset makes splitting pointless; numerical evaluation needs no debate. Extra cost: serialization overhead for inter-agent context passing and cross-agent log tracing during debugging.
+
+### Approach B: Single Agent + Finite State Machine
+
+One agent drives the entire research loop. The state machine controls behavioral boundaries and transitions:
 
 ```
-Train → Backtest (needs model) → Evaluate (needs backtest results) → Decide (needs evaluation)
+INIT → GENERATE → EXECUTE → EVALUATE ──→ FINISH
+                     ↑          │
+                     └── ITERATE ┘
 ```
 
-You can't backtest without a trained model. You can't evaluate without backtest results. Each step's input is the previous step's output. There's no room for parallelism.
+The core idea in one sentence: **replace "coordination protocol between multiple agents" with "state transition rules within a single agent."**
 
-### Precondition 3: Adversarial or debate dynamics add value
+Each state transition is deterministic: if EVALUATE metrics meet the threshold, transition to FINISH; if not, transition to ITERATE back to GENERATE. No inter-agent "discussion" about what to do next.
 
-Some systems use multi-agent for "red team / blue team" — one agent proposes, another pokes holes. This works for open-ended tasks like writing or design, where quality is subjective.
+## The Key Judgment Call
 
-Quant research evaluation is **numerically deterministic**. A Sharpe Ratio of 1.2 is 1.2. An IC of 0.03 is 0.03. You don't need another agent to "debate" whether the number is right. Anti-overfit testing is a deterministic 4-point checklist, not subjective judgment.
+The pivotal insight wasn't a technical comparison. It was recognizing a deeper distinction: **multi-agent frameworks solve "coordination" problems, but my system doesn't have a "coordination" problem.**
 
-The adversarial mechanism degenerates into if-else logic, which a single agent handles internally.
+What my system has is an "orchestration" problem — a deterministic pipeline that needs to be automated, with LLM generation capability inserted at specific points. This is closer to workflow engine territory, not multi-agent collaboration territory.
 
-## What I Chose: Single Agent + State Machine
+This recognition came from an analogy: traditional CI/CD pipelines also have multiple stages (build → test → deploy), and could theoretically be mapped to multiple "agents." But nobody builds CI/CD with multi-agent frameworks, because everyone intuitively knows it's a serial orchestration problem. The quant research iteration loop is structurally isomorphic to a CI/CD pipeline.
 
-```
-INIT → PLAN → GENERATE_CODE → EXECUTE → EVALUATE → ITERATE/FINISH
-                                  ↑          │
-                                  └──────────┘
-```
+## Results
 
-One agent drives the entire loop. The state machine controls behavioral boundaries:
+The state machine approach has been running for several months. A few quantifiable comparison points:
 
-- **GENERATE_CODE**: Agent calls LLM to generate factor/strategy code
-- **EXECUTE**: Submits to Kernel API for backtesting
-- **EVALUATE**: Compares metrics against thresholds, makes continue/stop decision
-- **ITERATE**: If unsatisfied, feeds metrics back into GENERATE_CODE
+- Zero context loss: single agent naturally shares the full research history, no intermediate results need to be passed between agents
+- Linear traceability: every state transition has a complete record (input code, output metrics, evaluation decision, decision reasoning) — just walk the timeline when debugging
+- Debugging time went from "piecing together logs across multiple agents" to "locating within a single state sequence"
 
-Every iteration has a complete record: code, metrics, evaluation decision, reasoning. Any decision can be traced.
+Haven't encountered a scenario requiring parallelism. If I ever need to run 10 independent factor research tasks simultaneously, that's a concurrency scheduling problem — asyncio.gather handles it fine, no need for inter-agent communication.
 
-### Why State Machine Beats Multi-Agent Here
+## What This Decision Taught Me
 
-| Dimension | Multi-Agent | Single Agent + State Machine |
-|-----------|-------------|------------------------------|
-| Context | Must be explicitly passed between agents; easy to lose | Naturally shared across all states |
-| Debugging | Cross-agent log tracing | Linear trace within single process |
-| Latency | Inter-agent communication overhead | Zero communication overhead |
-| Accountability | Which agent made the bad call? | State machine records every decision |
-| Complexity | N agents × M communication patterns | 1 agent × K states |
+I distilled one judgment principle from this practice:
 
-The core argument: **when the pipeline is sequential, the toolset is shared, and evaluation is deterministic, multi-agent adds complexity that isn't offset by any gain.**
+> **Before choosing an architecture, identify the problem's structural type. Not every system with "multiple apparent roles" needs multi-agent.**
 
-## When Multi-Agent IS the Right Choice
+The method is three questions:
+1. Is there parallelism between tasks?
+2. Do toolsets need isolation?
+3. Does evaluation require subjective debate?
 
-I'm not saying multi-agent has no value. It's correct in these scenarios:
+If none are satisfied, don't use multi-agent. Even if one is satisfied, evaluate whether the coordination complexity introduced is covered by the gains.
 
-1. **Naturally parallel tasks**: e.g., simultaneously searching multiple information sources, each agent handling one source, then aggregating. Different toolsets, real parallelism gains.
-
-2. **Subjective adversarial judgment**: e.g., writing tasks — one agent writes, another critiques from the reader's perspective. Evaluation criteria are qualitative, not quantitative. Adversarial dynamics add value.
-
-3. **Non-shareable toolsets**: e.g., one agent can only access the codebase, another can only access production. Permission isolation requires physical separation.
-
-4. **Scale-out**: Same task type needs to process many instances simultaneously. This is essentially concurrency, not "multi-agent," but implementing it with a multi-agent framework is reasonable.
-
-My quant research system **satisfies none of these**.
-
-## On the Multi-Agent Hype
-
-There's a current industry tendency to treat multi-agent as a "more advanced" architecture paradigm, as if more agents = more sophisticated. This mirrors the microservices evolution — around 2015, everyone was splitting into microservices, until many teams realized their systems didn't need it.
-
-The criterion for architecture choice isn't "new" or "trendy," but "does the problem structure match?"
-
-My problem structure is: sequential pipeline, shared toolset, deterministic evaluation. The answer is single agent + state machine.
-
-If your problem structure is different, your answer might be different too. The key is: analyze the problem structure first, then choose the architecture. Not the other way around.
+This mirrors the microservices trajectory exactly. Around 2015, everyone was splitting into microservices, until many teams discovered their systems didn't need it — their problem was a deployment problem, not a service boundary problem. Multi-agent is currently going through the same inflation phase. The hype will pass. Problem structure analysis won't.
 
 ---
 
-*This is the first article in a series documenting architecture decisions I made while building an AI + quant research system. Upcoming topics: MCP's semantic gap problem, AI permission boundary design.*
+*First article in the series. Next: [MCP's Problem Isn't the Protocol — It's the Semantic Gap](/en/posts/mcp-semantic-gap/).*

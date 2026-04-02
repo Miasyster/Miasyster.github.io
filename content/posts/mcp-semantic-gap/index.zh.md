@@ -4,157 +4,112 @@ date: 2026-04-02
 draft: false
 tags: ["MCP", "AI Agent", "Vibe Coding", "Intent Validation"]
 categories: ["Architecture Decisions"]
-summary: "MCP 协议本身没什么大问题。真正的问题是：自然语言到结构化指令之间存在一条语义鸿沟，而当前的 MCP 生态完全没有处理它。我用 Intent Validator 模式在自己的系统里解决了这个问题。"
+summary: "MCP 的 JSON-RPC 传输没有问题。真正的问题是自然语言规则没有代码级强制力——LLM 可以完全无视你的 instructions。我设计了 Intent Validator 模式来补上这个缺口。"
 ---
 
-## 问题是什么
+## 一条被忽视的规则
 
-我有一套 AI 驱动的量化研究系统。AI Agent 通过 MCP 工具提交各种研究任务：ML 训练、回测、因子研究等。每种任务有几十个参数，有些参数之间存在复杂的业务约束。
+我的系统有一条业务规则：ML 回测必须使用全区间数据，禁止限定日期范围。原因是限定范围会导致样本量不足，回测结果不可靠。
 
-举个例子，ML 回测任务有一条关键规则：
+这条规则写在 MCP server 的 instructions 里，用自然语言告诉 Agent："NEVER restrict to test period only。"
 
-> **禁止设置 start_date 和 end_date。** 必须使用全区间 OOF（Out-of-Fold）回测——样本内用交叉验证预测，样本外用最终模型。限制日期范围会导致数据点太少，结果不可靠。
+然后某天 Agent 无视了这条规则，填了一个日期范围，请求通过了，任务跑完了，结果看起来正常。没有任何报错。但结果是不可靠的——只是没有人知道。
 
-这条规则写在 MCP server 的 instructions 里，用自然语言告诉 Agent：
+这不是 MCP 的 bug。协议层工作正常。问题是一个更根本的缺陷：**整个 MCP 生态里，自然语言规则和代码执行之间没有任何强制性绑定。**
 
-```
-ml_backtest: ALWAYS use full period (do NOT set start_date/end_date).
-Empty dates = OOF backtest: in-sample uses cross-validated predictions,
-out-of-sample uses final model.
-NEVER restrict to test period only — too few data points.
-```
+## 问题的结构
 
-问题来了：**Agent 可以完全无视这段话。**
-
-LLM 读了这段 instruction，大多数时候会遵守。但偶尔——尤其在用户给了明确日期范围的情况下——它会直接把日期填进去。没有任何东西阻止它。请求合法地通过 MCP，合法地到达 REST API，Pydantic 模型校验通过（因为 start_date 就是个 string 字段），任务提交成功，结果不可靠但看起来没有报错。
-
-**这不是 MCP 协议的 bug。JSON-RPC 传输没有问题，tool schema 定义没有问题。** 问题在于：自然语言规则没有代码级的强制力。
-
-## 三层校验，中间是空的
-
-我的系统有三层校验，但中间恰好缺了最关键的一层：
+当前 AI 工具调用的校验分三层。中间那层是空的：
 
 ```
-第一层：MCP instructions（自然语言）  → Agent 可以忽略
-第二层：???                          → 空的
-第三层：Pydantic 模型校验（类型检查） → start_date 是合法 string，通过
+自然语言指令（MCP instructions）  → LLM "理解"了 → 可能遵守，可能无视
+            ↓
+         ???（空）              → 没有任何代码级检查
+            ↓
+类型校验（JSON Schema / Pydantic）→ start_date 是 string → 类型合法 → 通过
 ```
 
-第一层是"建议"，第三层是"类型检查"。中间缺一层"业务规则的代码级强制"。
+第一层是劝告，第三层是类型检查。中间缺的是**业务语义的代码级强制**。
 
-这个空洞在所有 MCP 应用里都存在。MCP 的 tool schema 能描述参数类型（string、int、array），但不能描述参数之间的业务约束（"如果 symbols 为空，则 universe 必须非空"、"ml_backtest 不允许设置日期"）。
+这个空洞不是我的系统独有的。任何用 MCP 或 function calling 的系统都有同样的问题。MCP 的 tool schema 能定义参数类型，但不能表达参数之间的条件约束——"如果 A 为空则 B 必须非空"、"任务类型为 X 时禁止设置 Y"这类规则，JSON Schema 表达不了。
 
-## 解决方案：Intent Validator
+目前业界对这个问题的处理方式是两端用力：
 
-我在 MCP tool 层和 HTTP 调用层之间加了一个 Intent Validator：
+- 上游：优化 prompt，让 LLM 更好地理解规则 → 有上限，永远不会 100% 可靠
+- 下游：收紧 JSON Schema，用更严格的类型定义 → 表达力不够，跨参数约束描述不了
 
-```
-Agent 调用 MCP submit()
-  → JSON 解析
-    → Intent Validator ← 新增：代码级业务规则强制
-      → HTTP 调用 Orchestration API
-        → Pydantic 类型校验
-```
+两端都在做，中间那层没人做。
 
-核心设计：
+## 我的思考路径
 
-### 1. 注册式规则架构
+最初的想法是自研一套协议替代 MCP。但分析之后发现这是错误的反应——协议层（JSON-RPC 传输、tool discovery、序列化）没有问题，问题在应用层。换协议解决不了语义问题，只是在搬运复杂度。
 
-每个任务类型可以注册多条校验规则，新增规则不需要改 MCP server 代码：
+然后想到：这个问题的结构类似于 Web 开发中的输入校验。前端表单有 HTML5 的 type="email" 校验（类似 JSON Schema 的类型检查），但真正的业务校验（"邮箱域名必须是公司域名"、"金额不能超过余额"）是在后端做的。没有人会说"HTML5 校验不够用，我要自研一套 HTTP 协议"。
 
-```python
-@_register("ml_backtest")
-def _no_date_restriction(config, objective):
-    violations = []
-    if config.get("start_date"):
-        violations.append({
-            "rule": "ml_backtest_no_start_date",
-            "error": "start_date is set but ML backtest requires full period.",
-            "fix": "Remove start_date for full-period OOF backtest.",
-        })
-    return violations
-```
+正确的做法是**在 LLM 输出之后、系统执行之前，加一层应用级的业务规则校验**。
 
-### 2. 硬拦截 + 软警告
+这就是 Intent Validator 的设计起点。
 
-每条规则有 severity 级别。硬错误直接拒绝提交并返回修复指令，警告附带在成功响应里：
+## 方案对比
 
-```python
-# 硬错误：直接拒绝
-{"rule": "ml_backtest_no_start_date", "error": "...", "fix": "..."}
+### 方案 A：强化 Prompt Instructions
 
-# 软警告：允许提交但提醒
-{"rule": "ml_backtest_split_dates_recommended", "severity": "warning",
- "error": "split_dates not provided", "fix": "Pass split_dates from training result"}
-```
+把规则写得更明确、更强调、加更多 WARNING 标记。这是当前多数 MCP 应用的做法。
 
-### 3. 可操作的错误信息
+问题：本质上是在跟概率对赌。LLM 不是规则引擎，它是概率模型。"大多数时候遵守"不等于"永远遵守"。在研究实验里偶尔犯错可以接受，在生产环境里不行。
 
-每条 violation 包含三个字段：`rule`（机器可读标识）、`error`（问题描述）、`fix`（修复指令）。Agent 收到拒绝后能直接按 `fix` 字段修正参数重新提交，不需要人类介入。
+### 方案 B：收紧 Tool Schema
 
-### 4. 两条路径统一覆盖
+把 start_date 从 optional 改成不暴露这个字段。但这意味着其他需要日期的任务类型也用不了了——一个 tool 的 schema 是所有调用场景的并集，不是交集。
 
-同一套规则同时覆盖 MCP 和 HTTP 两条入口路径。MCP 路径在 `submit()` 里调用 validator，HTTP 路径通过 Pydantic 的 `model_validator` 在请求反序列化时自动触发：
+### 方案 C：Intent Validator（我的选择）
 
-```python
-class IntentValidatedModel(BaseModel):
-    _intent_task_type: str = ""
+在 LLM 输出的参数被解析之后、被发送到执行层之前，插入一层代码级校验。每个任务类型注册自己的业务规则，校验器自动执行。
 
-    @model_validator(mode="after")
-    def _run_intent_validation(self):
-        result = validate_intent(self._intent_task_type, self.model_dump(), ...)
-        if hard_errors:
-            raise ValueError(f"Intent validation failed: {msg}")
-        return self
+核心设计原则：
 
-class MLBacktestRequest(IntentValidatedModel):
-    _intent_task_type: str = "ml_backtest"
-    model_id: str
-    # ...
-```
+**规则即代码，不是文档。** "ml_backtest 禁止设日期"不是写在 README 里的注意事项，是一段会 raise error 的 Python 函数。
 
-这样无论 Agent 通过 MCP 提交，还是脚本通过 curl 直接调 REST API，都经过同一套业务规则校验。
+**注册式架构。** 新增规则不改框架代码，只加一个装饰器函数。从 0 条规则到 100 条规则，架构代码不变。
 
-## 已注册的规则
+**可操作的拒绝信息。** 拒绝不是一个 "400 Bad Request"。每条 violation 带三个字段：rule（机器可读 ID）、error（问题描述）、fix（具体修复指令）。Agent 收到拒绝后能自动修正重新提交，不需要人介入。
 
-| 任务类型 | 规则 | 级别 |
-|---------|------|------|
-| ml_training | 空 symbols 必须有 universe | 硬拦截 |
-| ml_training | model_type 白名单校验 | 硬拦截 |
-| ml_backtest | 禁止设 start_date/end_date | 硬拦截 |
-| ml_backtest | 必须有 model_id | 硬拦截 |
-| ml_backtest | 必须有 universe 或 symbols | 硬拦截 |
-| ml_backtest | 建议传 split_dates | 警告 |
-| ml_predict | 必须有 model_id + universe | 硬拦截 |
-| rolling_factor_research | 日期范围 >= 窗口总长 | 硬拦截 |
-| data_update | update_mode 枚举校验 | 硬拦截 |
-| 通用 | 日期格式 YYYY-MM-DD | 硬拦截 |
-| 通用 | start_date < end_date | 硬拦截 |
+**硬拦截和软警告分离。** 有些规则是必须遵守的（硬错误直接拒绝），有些是建议（警告附带在成功响应里）。不是非黑即白。
 
-## 这和 Harness 的区别
+## 关键判断点
 
-Claude Code 有 permission mode 和 hooks，Cursor 有 rules 文件。这些是 Harness 模式——从外部约束 Agent 的行为边界。
+设计过程中最关键的一个决策是：**这层校验应该放在哪里？**
 
-Intent Validator 不是 Harness。区别：
+选项一：放在 MCP server 里。只覆盖 Agent 调用路径。
 
-- **Harness** 管的是"Agent 能不能调这个工具"——粒度是工具级别
-- **Intent Validator** 管的是"Agent 调这个工具时，参数组合是否符合业务语义"——粒度是参数级别
+选项二：放在 REST API 的请求模型里。只覆盖 HTTP 调用路径。
 
-Harness 能做到"禁止 Agent 调 submit"，但做不到"允许 Agent 调 submit，但如果 task_type 是 ml_backtest 且 start_date 非空则拒绝"。这种参数间的条件约束需要在应用层实现。
+选项三：抽成独立模块，两条路径都调用它。
 
-## 对 Vibe Coding 的启示
+我选了第三个。原因是一条规则不应该写两遍——MCP 和 HTTP 是同一个系统的两个入口，业务规则不因入口不同而改变。实现方式是在请求模型的基类里加一个 model_validator，自动调用同一套规则引擎。MCP server 的 submit 函数也调用同一套。规则只写一份，覆盖所有入口。
 
-Vibe coding 的核心矛盾是：**自然语言的模糊性 vs 系统操作的精确性。** 用户说"帮我跑个回测"，这句话可以映射到几十种不同的参数组合，其中只有少数几种是合理的。
+这个决策的启发来源是 DRY 原则的一个推论：**校验逻辑的重复比业务逻辑的重复更危险。** 业务逻辑重复了，两处表现一致；校验逻辑重复了，两处规则不同步时一个入口放行另一个入口拒绝，安全漏洞就出现了。
 
-当前的解决思路集中在两端：
+## 实施效果
 
-- **提升 LLM 理解能力**：让模型更好地理解 instructions → 有上限，永远不会 100%
-- **收紧 tool schema**：用更严格的参数定义 → JSON Schema 表达力有限，描述不了跨参数约束
+部署后测试了几个场景：
 
-缺失的中间层就是 Intent Validation：**在 LLM 输出之后、系统执行之前，用代码强制检查业务语义。** 不依赖 LLM 的理解能力，不受 JSON Schema 的表达力限制。
+- Agent 提交 ml_backtest 时带了 start_date → 即时拒绝，返回明确的修复指令，Agent 自动修正后重新提交成功
+- 脚本直接 curl 调用 REST API，带了非法参数组合 → Pydantic model_validator 触发同一套规则，返回 422
+- 新增一条业务规则 → 写一个装饰器函数，不改任何现有代码
 
-这个模式适用于任何 Agent 操作有业务约束的场景——不只是量化研究。医疗 Agent 不能开违禁药物组合、法律 Agent 不能引用已废止的法条、运维 Agent 不能在高峰期执行全量部署——这些约束都需要代码级强制，不能靠 prompt 软约束。
+从"规则写在 instructions 里靠 LLM 自觉遵守"变成"规则写在代码里不遵守就报错"。可靠性从概率性变成确定性。
+
+## 这个决策教会我什么
+
+我从这次实践中更新了一条思维框架：
+
+> **自然语言和代码之间的每一条关键约束，都需要有一个代码级的强制点。如果一条规则只存在于文档或 prompt 里，它就不是约束，而是建议。**
+
+这条原则的适用范围不限于 MCP。任何 AI Agent 操作有业务约束的场景都成立：医疗 Agent 的药物禁忌组合、法律 Agent 的法条时效性、运维 Agent 的变更窗口限制。这些约束如果只靠 prompt 软控制，就是在用概率模型做确定性保证——逻辑上不成立。
+
+Vibe coding 的核心矛盾是自然语言的模糊性和系统操作的精确性之间的鸿沟。Intent Validator 不是终极解法，但它指向了一个正确方向：**不要试图让 LLM 变得更严谨，而是在 LLM 后面加一道代码级的关卡。**
 
 ---
 
-*系列第二篇。上一篇：[为什么我没有用多智能体架构做量化研究系统](/posts/why-not-multi-agent/)。*
+*系列第二篇。上一篇：[为什么我没有用多智能体架构](/posts/why-not-multi-agent/)。*

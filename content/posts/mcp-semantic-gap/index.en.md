@@ -4,155 +4,112 @@ date: 2026-04-02
 draft: false
 tags: ["MCP", "AI Agent", "Vibe Coding", "Intent Validation"]
 categories: ["Architecture Decisions"]
-summary: "MCP's JSON-RPC transport works fine. The real problem: there's a semantic gap between natural language instructions and structured system operations, and the current MCP ecosystem doesn't address it at all. I built an Intent Validator to fix this in my system."
+summary: "MCP's JSON-RPC transport works fine. The real problem: natural language rules have no code-level enforcement — the LLM can completely ignore your instructions. I designed the Intent Validator pattern to close this gap."
 ---
 
-## The Problem
+## A Rule That Got Ignored
 
-I have an AI-driven quantitative research system. An AI agent submits various research tasks through MCP tools: ML training, backtesting, factor research, etc. Each task type has dozens of parameters with complex business constraints between them.
+My system has a business rule: ML backtests must use the full data range, date restrictions are forbidden. The reason is that restricting the range reduces sample size, making results unreliable.
 
-Here's one critical rule for ML backtesting:
+This rule was written in the MCP server's instructions, telling the agent in natural language: "NEVER restrict to test period only."
 
-> **Never set start_date or end_date.** Always use full-period OOF (Out-of-Fold) backtesting — in-sample uses cross-validated predictions, out-of-sample uses the final model. Restricting the date range gives too few data points, making results unreliable.
+Then one day the agent ignored it. It filled in a date range, the request went through, the task completed, and the results looked normal. No errors anywhere. But the results were unreliable — nobody just knew.
 
-This rule lives in the MCP server's instructions, told to the agent in natural language:
+This isn't an MCP bug. The protocol layer worked correctly. The problem is more fundamental: **across the entire MCP ecosystem, there is no mandatory binding between natural language rules and code execution.**
 
-```
-ml_backtest: ALWAYS use full period (do NOT set start_date/end_date).
-Empty dates = OOF backtest: in-sample uses cross-validated predictions,
-out-of-sample uses final model.
-NEVER restrict to test period only — too few data points.
-```
+## The Structure of the Problem
 
-The problem: **the agent can completely ignore this.**
-
-The LLM reads the instruction and usually complies. But occasionally — especially when the user provides an explicit date range — it fills in the dates anyway. Nothing stops it. The request passes through MCP legitimately, reaches the REST API, passes Pydantic validation (because start_date is a legal string field), gets submitted, and produces unreliable results with no error.
-
-**This is not a bug in MCP.** The JSON-RPC transport works fine. The tool schema definition is fine. The problem is: natural language rules have no code-level enforcement.
-
-## Three Validation Layers, with a Gap in the Middle
-
-My system had three validation layers, but the critical middle one was empty:
+Current AI tool-calling validation has three layers. The middle one is empty:
 
 ```
-Layer 1: MCP instructions (natural language)  → Agent can ignore
-Layer 2: ???                                   → Empty
-Layer 3: Pydantic model validation (type check) → start_date is a valid string, passes
+Natural language instructions (MCP instructions) → LLM "understands" → might comply, might not
+            ↓
+         ??? (empty)                              → no code-level check
+            ↓
+Type validation (JSON Schema / Pydantic)          → start_date is a string → type valid → passes
 ```
 
-Layer 1 is "advice." Layer 3 is "type checking." The missing middle layer is "code-level enforcement of business rules."
+Layer 1 is advice. Layer 3 is type checking. The missing middle is **code-level enforcement of business semantics.**
 
-This gap exists in every MCP application. MCP's tool schema can describe parameter types (string, int, array), but cannot describe cross-parameter business constraints ("if symbols is empty, universe must be non-empty", "ml_backtest must not set dates").
+This gap isn't unique to my system. Every MCP or function-calling application has it. MCP's tool schema can define parameter types, but can't express conditional constraints between parameters — "if A is empty then B must be non-empty," "when task type is X, field Y is forbidden." JSON Schema can't describe these.
 
-## The Solution: Intent Validator
+The industry currently attacks this from both ends:
 
-I added an Intent Validator between the MCP tool layer and the HTTP dispatch:
+- Upstream: optimize prompts so the LLM better understands rules → has a ceiling, will never be 100% reliable
+- Downstream: tighten JSON Schema with stricter type definitions → insufficient expressiveness for cross-parameter constraints
 
-```
-Agent calls MCP submit()
-  → JSON parsing
-    → Intent Validator ← NEW: code-level business rule enforcement
-      → HTTP call to Orchestration API
-        → Pydantic type validation
-```
+Both ends are being worked on. Nobody's building the middle layer.
 
-### 1. Registry-Based Rule Architecture
+## How I Got Here
 
-Each task type can register multiple validation rules. Adding rules requires zero changes to MCP server code:
+My first instinct was to build a custom protocol to replace MCP. After analysis, I realized this was the wrong reaction — the protocol layer (JSON-RPC transport, tool discovery, serialization) isn't broken. Swapping protocols doesn't fix a semantic problem; it just moves the complexity.
 
-```python
-@_register("ml_backtest")
-def _no_date_restriction(config, objective):
-    violations = []
-    if config.get("start_date"):
-        violations.append({
-            "rule": "ml_backtest_no_start_date",
-            "error": "start_date is set but ML backtest requires full period.",
-            "fix": "Remove start_date for full-period OOF backtest.",
-        })
-    return violations
-```
+Then I recognized the structural similarity to input validation in web development. Frontend forms have HTML5's type="email" validation (analogous to JSON Schema type checking), but real business validation ("email domain must be company domain," "amount can't exceed balance") happens on the backend. Nobody says "HTML5 validation is insufficient, I need to build a new HTTP protocol."
 
-### 2. Hard Blocks + Soft Warnings
+The correct approach is **adding an application-level business rule validation layer between LLM output and system execution.**
 
-Each rule has a severity level. Hard errors reject the submission with fix instructions. Warnings are attached to the success response:
+That was the design starting point for Intent Validator.
 
-```python
-# Hard error: reject
-{"rule": "ml_backtest_no_start_date", "error": "...", "fix": "..."}
+## Approaches Compared
 
-# Soft warning: allow but inform
-{"rule": "ml_backtest_split_dates_recommended", "severity": "warning",
- "error": "split_dates not provided", "fix": "Pass split_dates from training result"}
-```
+### Approach A: Strengthen Prompt Instructions
 
-### 3. Actionable Error Messages
+Write rules more explicitly, add more WARNING markers, emphasize consequences. This is what most MCP applications currently do.
 
-Every violation has three fields: `rule` (machine-readable ID), `error` (what's wrong), `fix` (how to correct it). When rejected, the agent can directly follow the `fix` field to adjust parameters and resubmit, with no human intervention needed.
+The problem: you're fundamentally gambling against probabilities. An LLM isn't a rule engine; it's a probability model. "Usually complies" is not "always complies." Occasional failures are acceptable in research experiments. In production, they're not.
 
-### 4. Unified Coverage Across Both Entry Points
+### Approach B: Tighten Tool Schema
 
-The same rules cover both MCP and HTTP entry paths. The MCP path calls the validator inside `submit()`. The HTTP path triggers it through Pydantic's `model_validator` during request deserialization:
+Remove start_date from the exposed fields entirely. But this means other task types that legitimately need dates can't use them either — a tool's schema is the union of all calling scenarios, not the intersection.
 
-```python
-class IntentValidatedModel(BaseModel):
-    _intent_task_type: str = ""
+### Approach C: Intent Validator (My Choice)
 
-    @model_validator(mode="after")
-    def _run_intent_validation(self):
-        result = validate_intent(self._intent_task_type, self.model_dump(), ...)
-        if hard_errors:
-            raise ValueError(f"Intent validation failed: {msg}")
-        return self
+Insert a code-level validation layer after LLM output is parsed, before it's sent to the execution layer. Each task type registers its own business rules; the validator runs them automatically.
 
-class MLBacktestRequest(IntentValidatedModel):
-    _intent_task_type: str = "ml_backtest"
-    model_id: str
-    # ...
-```
+Core design principles:
 
-Whether the agent submits through MCP or a script hits the REST API directly, the same business rules are enforced.
+**Rules are code, not documentation.** "ml_backtest can't set dates" isn't a note in the README. It's a Python function that raises an error.
 
-## Registered Rules
+**Registry architecture.** Adding rules doesn't change framework code — just add a decorated function. Going from 0 rules to 100 rules requires zero changes to the validation engine.
 
-| Task Type | Rule | Level |
-|-----------|------|-------|
-| ml_training | Empty symbols requires universe | Hard block |
-| ml_training | model_type whitelist | Hard block |
-| ml_backtest | No start_date/end_date allowed | Hard block |
-| ml_backtest | model_id required | Hard block |
-| ml_backtest | Universe or symbols required | Hard block |
-| ml_backtest | split_dates recommended | Warning |
-| ml_predict | model_id + universe required | Hard block |
-| rolling_factor_research | Date range >= window total | Hard block |
-| data_update | update_mode enum validation | Hard block |
-| Common | Date format YYYY-MM-DD | Hard block |
-| Common | start_date < end_date | Hard block |
+**Actionable rejection messages.** A rejection isn't a bare "400 Bad Request." Each violation carries three fields: rule (machine-readable ID), error (what's wrong), fix (specific correction instructions). The agent can self-correct and resubmit without human intervention.
 
-## How This Differs from a Harness
+**Hard blocks and soft warnings, separated.** Some rules are mandatory (hard errors reject the submission). Some are advisory (warnings attached to the success response). Not everything is binary.
 
-Claude Code has permission modes and hooks. Cursor has rules files. These are harness patterns — external constraints on agent behavior.
+## The Key Judgment Call
 
-Intent Validator is not a harness. The distinction:
+The most critical design decision was: **where should this validation layer live?**
 
-- **Harness** controls "can the agent call this tool?" — tool-level granularity
-- **Intent Validator** controls "when the agent calls this tool, does the parameter combination satisfy business semantics?" — parameter-level granularity
+Option 1: Inside the MCP server. Covers only the agent calling path.
 
-A harness can "prohibit the agent from calling submit." It cannot "allow submit, but reject if task_type is ml_backtest and start_date is non-empty." Cross-parameter conditional constraints must be implemented at the application layer.
+Option 2: Inside the REST API request models. Covers only the HTTP calling path.
 
-## Implications for Vibe Coding
+Option 3: Extract into an independent module, called by both paths.
 
-The core tension of vibe coding is: **natural language ambiguity vs. system operation precision.** A user says "run a backtest for me" — that maps to dozens of possible parameter combinations, only a few of which are reasonable.
+I chose option 3. The reasoning: a rule shouldn't be written twice. MCP and HTTP are two entry points into the same system; business rules don't change based on which door you walk through. Implementation: a model_validator in the request model base class automatically calls the shared rule engine. The MCP server's submit function also calls the same engine. Rules written once, all entry points covered.
 
-Current approaches concentrate on two extremes:
+The inspiration for this decision came from a corollary of DRY: **duplication in validation logic is more dangerous than duplication in business logic.** If business logic is duplicated, both copies behave the same. If validation logic is duplicated and the two copies drift out of sync, one entry point allows what another rejects — that's a security hole.
 
-- **Improve LLM understanding**: make the model better at following instructions → has a ceiling, will never be 100%
-- **Tighten tool schemas**: use stricter parameter definitions → JSON Schema's expressiveness is limited, can't describe cross-parameter constraints
+## Results
 
-The missing middle layer is Intent Validation: **after LLM output, before system execution, enforce business semantics with code.** Doesn't depend on LLM comprehension ability. Not limited by JSON Schema expressiveness.
+After deployment, I tested several scenarios:
 
-This pattern applies to any scenario where agent operations have business constraints — not just quant research. A medical agent shouldn't prescribe contraindicated drug combinations. A legal agent shouldn't cite repealed statutes. An ops agent shouldn't run full deployments during peak hours. These constraints all need code-level enforcement, not prompt-level suggestions.
+- Agent submits ml_backtest with start_date → instant rejection with clear fix instructions, agent self-corrects and resubmits successfully
+- Script curls the REST API directly with illegal parameter combination → Pydantic model_validator triggers the same rules, returns 422
+- Adding a new business rule → write one decorated function, change zero existing code
+
+From "rules in instructions, hoping the LLM complies" to "rules in code, non-compliance is an error." Reliability went from probabilistic to deterministic.
+
+## What This Decision Taught Me
+
+I updated a mental framework from this practice:
+
+> **Every critical constraint between natural language and code needs a code-level enforcement point. If a rule exists only in documentation or prompts, it's not a constraint — it's a suggestion.**
+
+This principle extends beyond MCP. It applies to any scenario where AI agents operate under business constraints: drug contraindication rules for medical agents, statute of limitations checks for legal agents, change window restrictions for ops agents. If these constraints rely solely on prompt-level soft control, you're using a probabilistic model to provide deterministic guarantees — that's logically unsound.
+
+The core tension of vibe coding is the gap between natural language ambiguity and system operation precision. Intent Validator isn't the ultimate solution, but it points in the right direction: **don't try to make the LLM more rigorous — put a code-level gate behind it.**
 
 ---
 
-*Second article in the series. Previous: [Why I Didn't Use Multi-Agent Architecture for My Quant Research System](/en/posts/why-not-multi-agent/).*
+*Second article in the series. Previous: [Why I Didn't Use Multi-Agent Architecture](/en/posts/why-not-multi-agent/).*

@@ -1,0 +1,23 @@
+name: Archive to Wayback Machine
+
+on:
+  workflow_run:
+    workflows: ["Deploy Hugo to GitHub Pages"]
+    types: [completed]
+
+jobs:
+  archive:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit all posts to Wayback Machine
+        run: |
+          for slug in $(ls content/posts/); do
+            url="https://miasyster.github.io/posts/${slug}/"
+            echo "Archiving: ${url}"
+            curl -s "https://web.archive.org/save/${url}" -o /dev/null -w "%{http_code}\n" || true
+            sleep 2
+          done
+          # Also archive homepage
+          curl -s "https://web.archive.org/save/https://miasyster.github.io/" -o /dev/null || true

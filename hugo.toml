@@ -29,7 +29,7 @@ enableRobotsTXT = true
   ShowToc = true
   TocOpen = false
   # Analytics — fill in after registering
-  # umamiWebsiteId = "your-umami-website-id"
+  umamiWebsiteId = "f921b2b5-bb44-44f1-9026-405a5d9b6dba"
   # googleSiteVerification = "your-google-verification-code"
   [params.homeInfoParams]
     Title = "AI + Quant Engineering"

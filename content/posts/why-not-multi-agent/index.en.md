@@ -7,6 +7,8 @@ categories: ["Architecture Decisions"]
 summary: "Multi-agent is the hot paradigm in AI engineering. I chose single agent + state machine for my AI-driven quant research system. Not because multi-agent is too hard, but because the problem structure doesn't match."
 ---
 
+> **Multi-agent is the hot paradigm in AI engineering. I chose single agent + state machine for my AI-driven quant research system. Not because multi-agent is too hard, but because the problem structure doesn't match.**
+
 ## A Counterintuitive Choice
 
 Since 2024, multi-agent has become almost the default architecture for AI systems. CrewAI, AutoGen, MetaGPT — every framework tells you: split tasks across multiple agents, let them collaborate, get better results.

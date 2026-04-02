@@ -7,6 +7,8 @@ categories: ["Architecture Decisions"]
 summary: "MCP 的 JSON-RPC 传输没有问题。真正的问题是自然语言规则没有代码级强制力——LLM 可以完全无视你的 instructions。我设计了 Intent Validator 模式来补上这个缺口。"
 ---
 
+> **MCP 的 JSON-RPC 传输没有问题。真正的问题是自然语言规则没有代码级强制力——LLM 可以完全无视你的 instructions。我设计了 Intent Validator 模式来补上这个缺口。**
+
 ## 一条被忽视的规则
 
 我的系统有一条业务规则：ML 回测必须使用全区间数据，禁止限定日期范围。原因是限定范围会导致样本量不足，回测结果不可靠。

@@ -7,6 +7,8 @@ categories: ["Architecture Decisions"]
 summary: "MCP's JSON-RPC transport works fine. The real problem: natural language rules have no code-level enforcement — the LLM can completely ignore your instructions. I designed the Intent Validator pattern to close this gap."
 ---
 
+> **MCP's JSON-RPC transport works fine. The real problem: natural language rules have no code-level enforcement — the LLM can completely ignore your instructions. I designed the Intent Validator pattern to close this gap.**
+
 ## A Rule That Got Ignored
 
 My system has a business rule: ML backtests must use the full data range, date restrictions are forbidden. The reason is that restricting the range reduces sample size, making results unreliable.

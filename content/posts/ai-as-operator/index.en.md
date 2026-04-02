@@ -7,6 +7,8 @@ categories: ["Architecture Decisions"]
 summary: "Letting AI drive research workflows doesn't mean letting AI decide how the system runs. I made a key separation: AI is just the operator, the execution engine is the law. This decision came from a failure."
 ---
 
+> **Letting AI drive research workflows doesn't mean letting AI decide how the system runs. I made a key separation: AI is just the operator, the execution engine is the law. This decision came from a failure.**
+
 ## A Failure That Clarified Things
 
 In the early days of the system, I gave AI a lot of freedom — it could connect directly to databases, generate scripts in any directory, bypass APIs to instantiate internal components and run tasks.

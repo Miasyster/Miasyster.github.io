@@ -7,6 +7,8 @@ categories: ["Architecture Decisions"]
 summary: "Most systems are designed to run first, then audited as an afterthought. I inverted the order — first define what questions the system must answer when things go wrong, then work backwards to what each layer must record. This inversion reshaped the entire architecture."
 ---
 
+> **Most systems are designed to run first, then audited as an afterthought. I inverted the order — first define what questions the system must answer when things go wrong, then work backwards to what each layer must record. This inversion reshaped the entire architecture.**
+
 ## An Inverted Design Order
 
 The natural order of building a system: make the feature work, add logging, then bolt on audit trails.

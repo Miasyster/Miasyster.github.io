@@ -7,4 +7,4 @@ layout: "single"
 
 这个博客记录我在实际工程中的架构决策、踩坑经验和技术判断。不写教程，只写判断。
 
-联系方式：[GitHub](https://github.com/Miasyster)
+联系方式：[GitHub](https://github.com/Miasyster) · [Email](mailto:qq853777924@gmail.com)

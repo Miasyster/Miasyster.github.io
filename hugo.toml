@@ -37,6 +37,12 @@ enableRobotsTXT = true
   [[params.socialIcons]]
     name = "github"
     url = "https://github.com/Miasyster"
+  [[params.socialIcons]]
+    name = "email"
+    url = "mailto:qq853777924@gmail.com"
+  [[params.socialIcons]]
+    name = "rss"
+    url = "/index.xml"
 
 [markup]
   [markup.highlight]

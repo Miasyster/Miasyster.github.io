@@ -11,12 +11,28 @@ enableRobotsTXT = true
     title = "AI + 量化工程"
     [languages.zh.params]
       description = "AI Agent 架构 / 量化研究系统 / 工程实践"
+    [[languages.zh.menu.main]]
+      name = "文章"
+      url = "/posts/"
+      weight = 1
+    [[languages.zh.menu.main]]
+      name = "关于"
+      url = "/about/"
+      weight = 2
   [languages.en]
     languageName = "English"
     weight = 2
     title = "AI + Quant Engineering"
     [languages.en.params]
       description = "AI Agent Architecture / Quant Research Systems / Engineering Practice"
+    [[languages.en.menu.main]]
+      name = "Posts"
+      url = "/en/posts/"
+      weight = 1
+    [[languages.en.menu.main]]
+      name = "About"
+      url = "/en/about/"
+      weight = 2
 
 [params]
   env = "production"

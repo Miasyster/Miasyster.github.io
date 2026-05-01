@@ -47,6 +47,25 @@ A semantically correct expression parser, a statistically rigorous anti-overfit 
 
 **Agents are generic; tools are proprietary. Investment should go to the proprietary layer.**
 
+## Small Players Build Agents, Big Companies Take Them Away
+
+This is the harshest reality: **any Agent you build, a big company can build a better one, at a fraction of your cost.**
+
+This has already happened:
+
+- Cursor / Windsurf built code Agents → Anthropic released Claude Code, natively integrated, eliminating the middle layer
+- Devin built an autonomous coding Agent → OpenAI released Codex, built directly into the platform
+- Third-party ChatGPT plugin ecosystem → OpenAI built GPTs, plugin developers' traffic vanished overnight
+- LangChain built tool orchestration frameworks → Model providers added native function calling / tool use, hollowing out the framework's core value
+
+The pattern is clear: **model providers have structural advantages in building Agents.** They have first-party model access, training data feedback loops, billions in compute, and engineering teams of hundreds. When a big company decides to enter your Agent niche, your differentiator — prompt engineering + orchestration logic — is something they can replicate in weeks. Because they own the model itself.
+
+Small companies and individuals building Agents are essentially building startups within big companies' firing range. The better your Agent performs and the more market validation it gets, the stronger the incentive for big companies to enter. This isn't "if" — it's "when."
+
+**But infrastructure is different.** Model providers will build general-purpose Agents (code assistants, chatbots, search agents), but they won't build quantitative factor expression parsers, A-share market anti-overfit detection systems, or WQ BRAIN compatibility compilers. These domain tools require months or years of vertical domain accumulation — big companies have no incentive to do this for every niche.
+
+**In the Agent layer, you compete with big companies. In the infrastructure layer, you compete with domain problems. The latter is a fight you can win.**
+
 ## Riding the Elevator: The Core Advantage of Agent-Infra
 
 The biggest benefit of Agent-Infra isn't "saving effort" — it's that **you automatically benefit from every improvement in Agent capabilities**.

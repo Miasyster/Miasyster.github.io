@@ -133,4 +133,4 @@ Agent 的决策是随机的——同一个输入，不同运行可能不同输�
 
 ---
 
-*系列文章：[Skill 编排 > Agent 循环链](/posts/skill-orchestration-over-agent-loops/) · [API Guard Pattern](/posts/api-guard-pattern/) · [Harness 即治理](/posts/harness-is-governance/)*
+*系列文章：[为什么做基建不做 Agent](/posts/why-agent-infra-not-agent/) · [Harness 即治理](/posts/harness-is-governance/) · [Skill 编排 > Agent 循环链](/posts/skill-orchestration-over-agent-loops/)*

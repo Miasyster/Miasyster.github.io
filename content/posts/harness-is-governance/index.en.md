@@ -143,4 +143,4 @@ This position is crucial. If governance is inside the Agent (prompt), it's fragi
 
 ---
 
-*Series: [Agent-Native Architecture](/posts/agent-native-architecture/) · [API Guard Pattern](/posts/api-guard-pattern/) · [AI as Operator, Kernel as Law](/posts/ai-as-operator/)*
+*Series: [Why Agent-Infra, Not Agents](/posts/why-agent-infra-not-agent/) · [Agent-Native Architecture](/posts/agent-native-architecture/) · [AI as Operator, Kernel as Law](/posts/ai-as-operator/)*

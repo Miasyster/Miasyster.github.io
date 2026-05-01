@@ -143,4 +143,4 @@ Agent（Claude）做出判断
 
 ---
 
-*系列文章：[Agent-Native 架构](/posts/agent-native-architecture/) · [API Guard Pattern](/posts/api-guard-pattern/) · [AI as Operator, Kernel as Law](/posts/ai-as-operator/)*
+*系列文章：[为什么做基建不做 Agent](/posts/why-agent-infra-not-agent/) · [Agent-Native 架构](/posts/agent-native-architecture/) · [AI as Operator, Kernel as Law](/posts/ai-as-operator/)*

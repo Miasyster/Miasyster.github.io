@@ -132,4 +132,4 @@ Tests guarantee: regardless of how the Agent calls the tools, the returned resul
 
 ---
 
-*Series: [Skill Orchestration > Agent Loop Chains](/posts/skill-orchestration-over-agent-loops/) · [API Guard Pattern](/posts/api-guard-pattern/) · [Harness Is Governance](/posts/harness-is-governance/)*
+*Series: [Why Agent-Infra, Not Agents](/posts/why-agent-infra-not-agent/) · [Harness Is Governance](/posts/harness-is-governance/) · [Skill Orchestration > Agent Loop Chains](/posts/skill-orchestration-over-agent-loops/)*
